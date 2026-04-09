@@ -25,5 +25,11 @@ service cloud.firestore {
       allow update: if true; 
       allow delete: if isAdmin();
     }
+
+    // Candidates rules
+    match /candidates/{candidateId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
   }
 }

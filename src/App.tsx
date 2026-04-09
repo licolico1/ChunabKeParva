@@ -58,7 +58,7 @@ const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quali
 // Firebase Imports
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
-import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, getDoc } from "firebase/firestore";
+import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, getDoc, collection, deleteDoc, writeBatch, getDocs } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
 // Initialize Firebase
@@ -138,7 +138,6 @@ interface SiteData {
     accent: string;
     description: string;
   };
-  candidates: Candidate[];
   commissioner: {
     name: string;
     role: string;
@@ -157,6 +156,63 @@ interface SiteData {
   };
 }
 
+const INITIAL_CANDIDATES: Candidate[] = [
+  {
+    id: "1",
+    name: "Utsab Saha",
+    party: "People's Communist Party of Raiganj (PCPR)",
+    slogan: "Empowering the Working Class for a Brighter Raiganj.",
+    logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775664480/IMG-20260408-WA0012_skjn4g.jpg",
+    photo: "https://picsum.photos/seed/utsab/400/500",
+    socialLink: ""
+  },
+  {
+    id: "2",
+    name: "Sayan Basak",
+    party: "Public Servant of Raiganj (PSR)",
+    slogan: "স্বাধীন জীবন সবার অধিকার।",
+    logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775664479/IMG-20260408-WA0015_pjwokv.jpg",
+    photo: "https://picsum.photos/seed/sayan/400/500",
+    socialLink: ""
+  },
+  {
+    id: "3",
+    name: "Saprativ Ghosh",
+    party: "Patriotic Vanguard Alliance (PVA)",
+    slogan: "Power of the People, Call of a New Age. A United Nation, Building a New Future.",
+    logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775702251/a29c18df-495d-46ba-9c8f-4c67502a9a7e.png",
+    photo: "https://picsum.photos/seed/saprativ/400/500",
+    socialLink: "https://www.instagram.com/_pva2.0?igsh=ZHJ1MGd4dDlycGR6"
+  },
+  {
+    id: "4",
+    name: "Soumajit Biswas",
+    party: "Unfiltered Opinion Party (UOP)",
+    slogan: "কাওকে ভয় না করে অপরিবর্তিত মতামত প্রকাশ।",
+    logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775702568/208ba945-61b9-42b4-968a-7b39e0049992.png",
+    photo: "https://picsum.photos/seed/soumajit/400/500",
+    socialLink: ""
+  },
+  {
+    id: "5",
+    name: "Souparno Chowdhury",
+    party: "Raiganj Republic Rebels",
+    slogan: "Roudram Ranam Rudhiram",
+    logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775702401/2be78db7-5fce-4cf7-af83-3387ca207ed4.png",
+    photo: "https://picsum.photos/seed/souparno/400/500",
+    socialLink: ""
+  },
+  {
+    id: "6",
+    name: "Samriddha Paul",
+    party: "Independent Visionary",
+    slogan: "Innovation and Integrity for the Future.",
+    logo: "https://picsum.photos/seed/samriddha-logo/200/200",
+    photo: "https://picsum.photos/seed/samriddha/400/500",
+    socialLink: ""
+  },
+];
+
 const INITIAL_DATA: SiteData = {
   logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775643609/FINAL_20260408_154719_0000_nkldtb.png",
   hero: {
@@ -165,62 +221,6 @@ const INITIAL_DATA: SiteData = {
     accent: "CHANGE",
     description: "The festival of democracy is here. Choose your representative wisely. Explore the candidates, their visions, and their commitment to Raiganj."
   },
-  candidates: [
-    {
-      id: "1",
-      name: "Utsab Saha",
-      party: "People's Communist Party of Raiganj (PCPR)",
-      slogan: "Empowering the Working Class for a Brighter Raiganj.",
-      logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775664480/IMG-20260408-WA0012_skjn4g.jpg",
-      photo: "https://picsum.photos/seed/utsab/400/500",
-      socialLink: ""
-    },
-    {
-      id: "2",
-      name: "Sayan Basak",
-      party: "Public Servant of Raiganj (PSR)",
-      slogan: "স্বাধীন জীবন সবার অধিকার।",
-      logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775664479/IMG-20260408-WA0015_pjwokv.jpg",
-      photo: "https://picsum.photos/seed/sayan/400/500",
-      socialLink: ""
-    },
-    {
-      id: "3",
-      name: "Saprativ Ghosh",
-      party: "Patriotic Vanguard Alliance (PVA)",
-      slogan: "Power of the People, Call of a New Age. A United Nation, Building a New Future.",
-      logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775702251/a29c18df-495d-46ba-9c8f-4c67502a9a7e.png",
-      photo: "https://picsum.photos/seed/saprativ/400/500",
-      socialLink: "https://www.instagram.com/_pva2.0?igsh=ZHJ1MGd4dDlycGR6"
-    },
-    {
-      id: "4",
-      name: "Soumajit Biswas",
-      party: "Unfiltered Opinion Party (UOP)",
-      slogan: "কাওকে ভয় না করে অপরিবর্তিত মতামত প্রকাশ।",
-      logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775702568/208ba945-61b9-42b4-968a-7b39e0049992.png",
-      photo: "https://picsum.photos/seed/soumajit/400/500",
-      socialLink: ""
-    },
-    {
-      id: "5",
-      name: "Souparno Chowdhury",
-      party: "Raiganj Republic Rebels",
-      slogan: "Roudram Ranam Rudhiram",
-      logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775702401/2be78db7-5fce-4cf7-af83-3387ca207ed4.png",
-      photo: "https://picsum.photos/seed/souparno/400/500",
-      socialLink: ""
-    },
-    {
-      id: "6",
-      name: "Samriddha Paul",
-      party: "Independent Visionary",
-      slogan: "Innovation and Integrity for the Future.",
-      logo: "https://picsum.photos/seed/samriddha-logo/200/200",
-      photo: "https://picsum.photos/seed/samriddha/400/500",
-      socialLink: ""
-    },
-  ],
   commissioner: {
     name: "Hon. Rajesh Kumar",
     role: "Chief Election Officer",
@@ -495,6 +495,7 @@ function CandidateCard({
 
 export default function App() {
   const [data, setData] = useState<SiteData>(INITIAL_DATA);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [visitCount, setVisitCount] = useState(0);
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -513,13 +514,30 @@ export default function App() {
 
   // Firestore Real-time Listener for Site Data
   useEffect(() => {
-    const unsubscribe = onSnapshot(doc(db, "site", "content"), (docSnap) => {
+    const unsubscribe = onSnapshot(doc(db, "site", "content"), async (docSnap) => {
       if (docSnap.exists()) {
-        const remoteData = docSnap.data() as SiteData;
-        setData(remoteData);
+        const remoteData = docSnap.data() as any;
+        
+        // Migration: If candidates are still in the main doc, move them
+        if (remoteData.candidates && remoteData.candidates.length > 0 && isAdmin) {
+          try {
+            const batch = writeBatch(db);
+            remoteData.candidates.forEach((c: Candidate) => {
+              batch.set(doc(db, "candidates", c.id), c);
+            });
+            // Remove candidates from main doc
+            const { candidates: _, ...rest } = remoteData;
+            batch.update(doc(db, "site", "content"), { candidates: [] });
+            await batch.commit();
+            console.log("Migration: Candidates moved to separate collection");
+          } catch (error) {
+            handleFirestoreError(error, OperationType.WRITE, "migration");
+          }
+        }
+
+        const { candidates: _, ...siteData } = remoteData;
+        setData(siteData as SiteData);
       } else {
-        // If it doesn't exist, we just use INITIAL_DATA locally.
-        // We only attempt to initialize in Firestore if the user is an admin.
         setData(INITIAL_DATA);
       }
       setIsLoading(false);
@@ -528,15 +546,42 @@ export default function App() {
       setIsLoading(false);
     });
     return () => unsubscribe();
+  }, [isAdmin]);
+
+  // Firestore Real-time Listener for Candidates
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "candidates"), (snapshot) => {
+      const candidatesList: Candidate[] = [];
+      snapshot.forEach((doc) => {
+        candidatesList.push(doc.data() as Candidate);
+      });
+      setCandidates(candidatesList);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "candidates");
+    });
+    return () => unsubscribe();
   }, []);
 
   // Initialize content if admin and it doesn't exist
   useEffect(() => {
     if (isAdmin && !isLoading) {
+      // Check site content
       getDoc(doc(db, "site", "content")).then(docSnap => {
         if (!docSnap.exists()) {
           setDoc(doc(db, "site", "content"), INITIAL_DATA)
             .catch(err => handleFirestoreError(err, OperationType.CREATE, "site/content"));
+        }
+      });
+
+      // Check candidates collection
+      const candidatesRef = collection(db, "candidates");
+      getDocs(candidatesRef).then(snapshot => {
+        if (snapshot.empty) {
+          const batch = writeBatch(db);
+          INITIAL_CANDIDATES.forEach(c => {
+            batch.set(doc(db, "candidates", c.id), c);
+          });
+          batch.commit().catch(err => handleFirestoreError(err, OperationType.CREATE, "candidates"));
         }
       });
     }
@@ -602,8 +647,28 @@ export default function App() {
 
   const resetSiteData = async () => {
     if (!isAdmin) return;
-    if (window.confirm("Are you sure you want to reset all site content to defaults? This cannot be undone.")) {
-      await setDoc(doc(db, "site", "content"), INITIAL_DATA);
+    if (window.confirm("Are you sure you want to reset all site content and candidates to defaults? This cannot be undone.")) {
+      try {
+        const batch = writeBatch(db);
+        // Reset site content
+        batch.set(doc(db, "site", "content"), INITIAL_DATA);
+        
+        // Delete all existing candidates
+        const snapshot = await getDocs(collection(db, "candidates"));
+        snapshot.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        
+        // Add initial candidates
+        INITIAL_CANDIDATES.forEach((c) => {
+          batch.set(doc(db, "candidates", c.id), c);
+        });
+        
+        await batch.commit();
+        alert("Site data and candidates have been reset to defaults.");
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, "reset");
+      }
     }
   };
 
@@ -631,26 +696,48 @@ export default function App() {
     saveToFirestore({ ...data, hero: { ...data.hero, ...updates } });
   };
 
-  const updateCandidate = (id: string, updates: Partial<Candidate>) => {
-    const newCandidates = data.candidates.map(c => c.id === id ? { ...c, ...updates } : c);
-    saveToFirestore({ ...data, candidates: newCandidates });
+  const updateCandidate = async (id: string, updates: Partial<Candidate>) => {
+    if (!isAdmin) return;
+    const candidate = candidates.find(c => c.id === id);
+    if (candidate) {
+      const updatedCandidate = { ...candidate, ...updates };
+      try {
+        await setDoc(doc(db, "candidates", id), updatedCandidate);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `candidates/${id}`);
+        alert("Failed to update candidate. The image might be too large.");
+      }
+    }
   };
 
-  const addCandidate = () => {
+  const addCandidate = async () => {
+    if (!isAdmin) return;
+    const newId = Date.now().toString();
     const newCandidate: Candidate = {
-      id: Date.now().toString(),
+      id: newId,
       name: "New Candidate",
-      party: "New Party",
-      slogan: "New Slogan",
-      logo: "https://picsum.photos/seed/newlogo/200/200",
-      photo: "https://picsum.photos/seed/newphoto/400/500",
+      party: "Independent",
+      slogan: "Your Slogan Here",
+      logo: "https://picsum.photos/seed/new-logo/200/200",
+      photo: "https://picsum.photos/seed/new-photo/400/500",
       socialLink: ""
     };
-    saveToFirestore({ ...data, candidates: [...data.candidates, newCandidate] });
+    try {
+      await setDoc(doc(db, "candidates", newId), newCandidate);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, "candidates");
+    }
   };
 
-  const deleteCandidate = (id: string) => {
-    saveToFirestore({ ...data, candidates: data.candidates.filter(c => c.id !== id) });
+  const deleteCandidate = async (id: string) => {
+    if (!isAdmin) return;
+    if (window.confirm("Are you sure you want to delete this candidate?")) {
+      try {
+        await deleteDoc(doc(db, "candidates", id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `candidates/${id}`);
+      }
+    }
   };
 
   const updateCommissioner = (updates: Partial<SiteData["commissioner"]>) => {
@@ -876,7 +963,7 @@ export default function App() {
             icon={Users}
           />
           <div className="grid gap-6 sm:gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            {data.candidates.map((candidate) => (
+            {candidates.map((candidate) => (
               <CandidateCard 
                 key={candidate.id} 
                 candidate={candidate} 

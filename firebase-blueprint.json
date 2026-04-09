@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "Candidate": {
+      "title": "Candidate",
+      "description": "A candidate running in the election",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "party": { "type": "string" },
+        "slogan": { "type": "string" },
+        "logo": { "type": "string", "description": "Base64 encoded party logo" },
+        "photo": { "type": "string", "description": "Base64 encoded candidate photo" },
+        "socialLink": { "type": "string" }
+      },
+      "required": ["id", "name", "party", "logo", "photo"]
+    },
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "Global website content",
+      "type": "object",
+      "properties": {
+        "logo": { "type": "string" },
+        "hero": {
+          "type": "object",
+          "properties": {
+            "date": { "type": "string" },
+            "title": { "type": "string" },
+            "accent": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        },
+        "commissioner": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "role": { "type": "string" },
+            "quote": { "type": "string" },
+            "photo": { "type": "string" }
+          }
+        },
+        "designer": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "role": { "type": "string" },
+            "bio": { "type": "string" },
+            "photo": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/site/content": {
+      "schema": "SiteContent",
+      "description": "Global site configuration and content"
+    },
+    "/candidates/{candidateId}": {
+      "schema": "Candidate",
+      "description": "Individual candidate entries"
+    },
+    "/site/stats": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "visitCount": { "type": "number" }
+        }
+      },
+      "description": "Site statistics"
+    }
+  }
+}
