@@ -26,9 +26,10 @@ import { useState, useEffect, useRef } from "react";
 
 // Image Compression Utility
 const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.src = base64Str;
+    img.onerror = () => reject(new Error("Failed to load image for compression"));
     img.onload = () => {
       const canvas = document.createElement('canvas');
       let width = img.width;
@@ -58,7 +59,7 @@ const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quali
 // Firebase Imports
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
-import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, getDoc, collection, deleteDoc, writeBatch, getDocs } from "firebase/firestore";
+import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, getDoc, collection, deleteDoc, writeBatch, getDocs, deleteField } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
 // Initialize Firebase
@@ -216,7 +217,7 @@ const INITIAL_CANDIDATES: Candidate[] = [
 const INITIAL_DATA: SiteData = {
   logo: "https://res.cloudinary.com/speed-searches/image/upload/v1775643609/FINAL_20260408_154719_0000_nkldtb.png",
   hero: {
-    date: "Election Day: 16th March 2026",
+    date: "Election Day: 16th April 2026",
     title: "VOTE FOR",
     accent: "CHANGE",
     description: "The festival of democracy is here. Choose your representative wisely. Explore the candidates, their visions, and their commitment to Raiganj."
@@ -305,29 +306,33 @@ function EditableImage({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert("File is too large. Please choose an image smaller than 5MB.");
+      if (file.size > 10 * 1024 * 1024) {
+        alert("File is too large. Please choose an image smaller than 10MB.");
         return;
       }
 
       setIsUploading(true);
       const reader = new FileReader();
       reader.onloadend = async () => {
+        const result = reader.result as string;
+        setPreviewSrc(result); // Show local preview immediately
         try {
-          const compressed = await compressImage(reader.result as string);
-          // Check if compressed size is still too large (Firestore limit is 1MB, but we have other fields too)
-          if (compressed.length > 800000) {
-            alert("The image is still too large after compression. Please try a smaller or lower-resolution image.");
+          const compressed = await compressImage(result);
+          if (compressed.length > 900000) {
+            alert("The image is still too large. Try a smaller image or use a URL instead.");
+            setPreviewSrc(null);
           } else {
             await onSave(compressed);
           }
         } catch (error) {
           console.error("Compression failed", error);
           alert("Failed to process image. Please try another one.");
+          setPreviewSrc(null);
         } finally {
           setIsUploading(false);
         }
@@ -336,24 +341,45 @@ function EditableImage({
     }
   };
 
+  const handleUrlPaste = () => {
+    const url = window.prompt("Paste image URL here:");
+    if (url && url.trim()) {
+      onSave(url.trim());
+    }
+  };
+
   return (
     <div className={`relative group ${className}`}>
-      <img src={src} alt={alt} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+      <img 
+        src={previewSrc || src} 
+        alt={alt} 
+        className={`h-full w-full object-cover transition-opacity ${isUploading ? 'opacity-50' : 'opacity-100'}`} 
+        referrerPolicy="no-referrer" 
+      />
       
       {isUploading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-30 backdrop-blur-[2px]">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-30 backdrop-blur-[1px]">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-orange-500 border-t-transparent"></div>
         </div>
       )}
 
       {isEditing && !isUploading && (
-        <div 
-          onClick={() => fileInputRef.current?.click()}
-          className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-20"
-        >
-          <div className="flex flex-col items-center gap-1 text-white p-1 text-center">
-            <ImageIcon className="w-4 h-4 sm:w-6 sm:h-6" />
-            <span className="text-[8px] sm:text-[10px] font-bold uppercase leading-tight">Change</span>
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+          <div className="flex gap-4">
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center gap-1 text-white hover:text-orange-400 transition-colors"
+            >
+              <ImageIcon className="w-6 h-6" />
+              <span className="text-[10px] font-bold uppercase">Upload</span>
+            </button>
+            <button 
+              onClick={handleUrlPaste}
+              className="flex flex-col items-center gap-1 text-white hover:text-orange-400 transition-colors"
+            >
+              <LinkIcon className="w-6 h-6" />
+              <span className="text-[10px] font-bold uppercase">URL</span>
+            </button>
           </div>
           <input 
             type="file" 
@@ -525,17 +551,29 @@ export default function App() {
             remoteData.candidates.forEach((c: Candidate) => {
               batch.set(doc(db, "candidates", c.id), c);
             });
-            // Remove candidates from main doc
-            const { candidates: _, ...rest } = remoteData;
-            batch.update(doc(db, "site", "content"), { candidates: [] });
+            // Remove candidates from main doc using deleteField to save space
+            batch.update(doc(db, "site", "content"), { candidates: deleteField() });
             await batch.commit();
-            console.log("Migration: Candidates moved to separate collection");
+            console.log("Migration: Candidates moved to separate collection and field deleted");
           } catch (error) {
             handleFirestoreError(error, OperationType.WRITE, "migration");
           }
         }
 
         const { candidates: _, ...siteData } = remoteData;
+        
+        // Auto-update date if it's the old one
+        if (siteData.hero?.date === "Election Day: 16th March 2026" && isAdmin) {
+          try {
+            await updateDoc(doc(db, "site", "content"), {
+              "hero.date": "Election Day: 16th April 2026"
+            });
+            console.log("Migration: Election date updated to April 16th");
+          } catch (error) {
+            console.error("Failed to auto-update date", error);
+          }
+        }
+
         setData(siteData as SiteData);
       } else {
         setData(INITIAL_DATA);
@@ -928,7 +966,7 @@ export default function App() {
             <div className="rounded-3xl glass p-8 sm:p-12 border border-orange-500/20">
               <h3 className="text-2xl font-bold mb-6">Ready to make a difference?</h3>
               <p className="text-gray-400 mb-8 leading-relaxed">
-                Registration is the first step towards active citizenship. Click the link below to access the official registration portal and secure your vote for March 16th.
+                Registration is the first step towards active citizenship. Click the link below to access the official registration portal and secure your vote for April 16th.
               </p>
               <div className="flex flex-col gap-4">
                 <a 
