@@ -24,6 +24,37 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
+// Image Compression Utility
+const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height *= maxWidth / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width *= maxHeight / height;
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+  });
+};
+
 // Firebase Imports
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
@@ -273,13 +304,33 @@ function EditableImage({
   alt?: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("File is too large. Please choose an image smaller than 5MB.");
+        return;
+      }
+
+      setIsUploading(true);
       const reader = new FileReader();
-      reader.onloadend = () => {
-        onSave(reader.result as string);
+      reader.onloadend = async () => {
+        try {
+          const compressed = await compressImage(reader.result as string);
+          // Check if compressed size is still too large (Firestore limit is 1MB, but we have other fields too)
+          if (compressed.length > 800000) {
+            alert("The image is still too large after compression. Please try a smaller or lower-resolution image.");
+          } else {
+            await onSave(compressed);
+          }
+        } catch (error) {
+          console.error("Compression failed", error);
+          alert("Failed to process image. Please try another one.");
+        } finally {
+          setIsUploading(false);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -288,7 +339,14 @@ function EditableImage({
   return (
     <div className={`relative group ${className}`}>
       <img src={src} alt={alt} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-      {isEditing && (
+      
+      {isUploading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-30 backdrop-blur-[2px]">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-orange-500 border-t-transparent"></div>
+        </div>
+      )}
+
+      {isEditing && !isUploading && (
         <div 
           onClick={() => fileInputRef.current?.click()}
           className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-20"
@@ -364,13 +422,13 @@ function CandidateCard({
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
         <div className="absolute bottom-4 left-4 z-30">
-          <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg bg-white p-2 shadow-lg overflow-hidden">
+          <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-xl bg-white p-2 shadow-2xl overflow-hidden border-2 border-orange-500/20">
             <EditableImage 
               src={candidate.logo} 
               onSave={(val) => onUpdate(candidate.id, { logo: val })}
               isEditing={isEditing}
               alt={`${candidate.party} logo`}
-              className="h-full w-full"
+              className="h-full w-full object-contain"
             />
           </div>
         </div>
@@ -516,6 +574,14 @@ export default function App() {
     }
   }, []);
 
+  // Live visit counter simulation (UI only, for dynamic feel)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVisitCount(prev => prev + Math.floor(Math.random() * 2));
+    }, 15000); // Slower increment to feel more realistic
+    return () => clearInterval(interval);
+  }, []);
+
   const login = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
@@ -543,8 +609,18 @@ export default function App() {
 
   const saveToFirestore = async (newData: SiteData) => {
     if (!isAdmin) return;
-    setData(newData);
-    await setDoc(doc(db, "site", "content"), newData);
+    try {
+      setData(newData);
+      await setDoc(doc(db, "site", "content"), newData);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, "site/content");
+      // Revert local state on error
+      const docSnap = await getDoc(doc(db, "site", "content"));
+      if (docSnap.exists()) {
+        setData(docSnap.data() as SiteData);
+      }
+      alert("Failed to save changes. The image might be too large for the database.");
+    }
   };
 
   const updateLogo = (newLogo: string) => {
@@ -644,19 +720,27 @@ export default function App() {
       {/* Navbar */}
       <nav className="fixed top-0 z-50 w-full border-b border-white/5 bg-black/50 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 sm:h-10 sm:w-10 overflow-hidden">
+          <div className="flex items-center gap-5">
+            <div className="h-16 w-16 sm:h-24 sm:w-24 overflow-hidden drop-shadow-2xl">
               <EditableImage 
                 src={data.logo} 
                 onSave={updateLogo}
                 isEditing={isEditing}
                 alt="Logo"
-                className="h-full w-full"
+                className="h-full w-full object-contain"
               />
             </div>
-            <span className="font-display text-lg sm:text-xl font-bold tracking-tight">
-              ChunabKeParva <span className="text-orange-500">v3.0</span>
-            </span>
+            <div className="flex flex-col">
+              <span className="font-display text-2xl sm:text-3xl font-black tracking-tighter leading-none">
+                CHUNAB<span className="text-orange-500 italic">KE</span>PARVA
+              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="h-1 w-1 rounded-full bg-orange-500 animate-pulse"></span>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-white/40">
+                  OFFICIAL PORTAL v3.0
+                </span>
+              </div>
+            </div>
           </div>
           <div className="hidden items-center gap-8 md:flex">
             {["Candidates", "Commissioner", "Designer", "Hall of Shame", "Register"].map((item) => (
@@ -974,28 +1058,37 @@ export default function App() {
       <footer className="border-t border-white/5 bg-black py-12">
         <div className="container mx-auto px-6">
           <div className="flex flex-col items-center justify-between gap-8 md:flex-row">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-5">
               <img 
                 src={data.logo} 
                 alt="Logo" 
-                className="h-8 w-8 object-contain"
+                className="h-16 w-16 object-contain drop-shadow-lg"
                 referrerPolicy="no-referrer"
               />
-              <span className="font-display text-lg font-bold">ChunabKeParva v3.0</span>
+              <div className="flex flex-col">
+                <span className="font-display text-2xl font-black tracking-tighter">CHUNABKEPARVA</span>
+                <span className="text-[10px] font-mono text-white/30 uppercase tracking-[0.4em] font-bold">The Festival of Democracy</span>
+              </div>
             </div>
             
-            <div className="flex flex-col items-center gap-2">
-              <div className="flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm font-mono text-orange-500">
-                <Eye size={14} />
-                <span>TOTAL VISITS: </span>
-                <EditableText 
-                  value={visitCount.toLocaleString()} 
-                  onSave={updateVisitCount}
-                  isEditing={isEditing}
-                  className="inline-block"
-                />
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-5 py-2.5 text-sm font-mono text-orange-500 shadow-lg shadow-orange-500/5">
+                  <div className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                  </div>
+                  <span className="text-white/40 text-[10px] font-bold uppercase tracking-wider mr-1">Live Visits:</span>
+                  <EditableText 
+                    value={visitCount.toLocaleString()} 
+                    onSave={updateVisitCount}
+                    isEditing={isEditing}
+                    className="inline-block font-black text-lg"
+                  />
+                </div>
+                <p className="text-[10px] text-white/20 uppercase tracking-[0.3em] font-bold">Real-time Analytics</p>
               </div>
-              <p className="text-xs text-white/20">© 2026 ChunabKeParva. All rights reserved.</p>
+              <p className="text-xs text-white/10">© 2026 ChunabKeParva. All rights reserved.</p>
             </div>
 
             <div className="flex gap-6">
